@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "type": "cargo",
+            "name": "Run Server",
+            "cargoArgs": ["run"],
+            "executableArgs": ["8080"],
+        },
+        
+    ]
+}
