@@ -92,9 +92,17 @@ impl Actor for WsSession {
         let range = Vec::from(self.offset.to_le_bytes());
         for key in self.range_idx.range(range..){
             if let Ok((_k, v)) = key{
+                if let Ok(txt_key) = String::from_utf8(v.to_vec()){
+                    let seq:Vec<&str> = txt_key.split('-').collect();
+                    let topic = seq[0].to_string();
+                    if topic.cmp(&self.topic).is_ne() {
+                        continue;
+                    }
+
+                }
                 if let Ok(Some(val)) = self.db.get(v){
                     if let Ok(json_text) = String::from_utf8(val.to_vec()){
-                        println!("遗留消息:{}", json_text);
+                        println!("retain message:{}", json_text);
                         ctx.text(json_text);
                     }
                 }
