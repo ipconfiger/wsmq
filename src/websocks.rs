@@ -88,7 +88,7 @@ pub struct WsSession{
 impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.text("hello");
+        ctx.text("{\"rs\":true,\"detail\":\"connected\"}");
         let range = Vec::from(self.offset.to_le_bytes());
         for key in self.range_idx.range(range..){
             if let Ok((_k, v)) = key{
