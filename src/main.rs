@@ -50,7 +50,7 @@ async fn status_handler(_req: HttpRequest, data: web::Data<AppState>) -> impl Re
     let retain_messages = data.range_idx.len();
 
     let last_nonce = match data.range_idx.last() {
-        Ok(Some((k, _v)))=>u64::from_le_bytes(k.to_vec().try_into().unwrap()),
+        Ok(Some((k, _v)))=>u64::from_be_bytes(k.to_vec().try_into().unwrap()),
         Err(_e)=>0,
         Ok(None)=>0
     };
@@ -102,7 +102,7 @@ async fn main() -> std::io::Result<()> {
     let r_idx = db.open_tree("range").unwrap();
     let d_idx = db.open_tree("d_idx").unwrap();
     if let Ok(Some((k, _v))) = r_idx.last(){
-        let last_id = u64::from_le_bytes(k.to_vec().try_into().unwrap());
+        let last_id = u64::from_be_bytes(k.to_vec().try_into().unwrap());
         println!("last id:{}", last_id);
         ID_GENERATOR.init_with(last_id);
     }

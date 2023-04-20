@@ -19,15 +19,15 @@ pub fn today_ts() -> i64{
 }
 
 pub fn i64toVec(n: i64) -> Vec<u8> {
-    Vec::from(n.to_le_bytes())
+    Vec::from(n.to_be_bytes())
 }
 
 pub fn u64toVec(n: u64) -> Vec<u8> {
-    Vec::from(n.to_le_bytes())
+    Vec::from(n.to_be_bytes())
 }
 
 pub fn vecti64(vc: Vec<u8>) -> i64 {
-    i64::from_le_bytes(vc.try_into().unwrap())
+    i64::from_be_bytes(vc.try_into().unwrap())
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +89,7 @@ impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.text("{\"rs\":true,\"detail\":\"connected\"}");
-        let range = Vec::from(self.offset.to_le_bytes());
+        let range = Vec::from(self.offset.to_be_bytes());
         for key in self.range_idx.range(range..){
             if let Ok((_k, v)) = key{
                 if let Ok(txt_key) = String::from_utf8(v.to_vec()){
@@ -176,7 +176,7 @@ impl WsSession {
         message.n = Some(nonce);
         let key = format!("{}-{}", message.t, message.i);
         let val = serde_json::to_string(message).unwrap();
-        let idx_key = Vec::from(nonce.to_le_bytes());
+        let idx_key = Vec::from(nonce.to_be_bytes());
         let today_timestamp_vec = i64toVec(today_ts());
         let remove_flag_key = today_timestamp_vec.clone();
         let deleted = match self.day_idx.remove(today_timestamp_vec){
