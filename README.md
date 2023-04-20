@@ -10,7 +10,7 @@ In theory, it can support Mac, Linux, Windows systems, but I don’t have a Wind
 for example:
 
 ```
-$wget https://  /opt/lib/wsmq
+$wget https://github.com/ipconfiger/wsmq/releases/download/ver-0.1.0/wsmq4  /opt/lib/wsmq
 $sudo ln -s /opt/lib/wsmq/wsmq4 /usr/bin/wsmq
 $wsmq 8000
 ```
