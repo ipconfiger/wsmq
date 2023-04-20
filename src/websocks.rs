@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use chrono::NaiveDate;
 use chrono::prelude::*;
+use sled::IVec;
 
+#[derive(Debug, PartialEq)]
+struct TransactionError;
 
 pub fn today_ts() -> i64{
     let today = NaiveDate::from_ymd_opt(
@@ -18,16 +21,19 @@ pub fn today_ts() -> i64{
     timestamp
 }
 
-pub fn i64toVec(n: i64) -> Vec<u8> {
+pub fn i64to_vec(n: i64) -> Vec<u8> {
     Vec::from(n.to_be_bytes())
 }
 
-pub fn u64toVec(n: u64) -> Vec<u8> {
-    Vec::from(n.to_be_bytes())
+pub fn vectu64(vc: Vec<u8>) -> u64 {
+    u64::from_be_bytes(vc.try_into().unwrap())
 }
 
-pub fn vecti64(vc: Vec<u8>) -> i64 {
-    i64::from_be_bytes(vc.try_into().unwrap())
+pub fn make_key(topic: &str, nonce: u64) -> IVec {
+    let mut nonce_vec = Vec::from(nonce.to_be_bytes());
+    let mut topic_vec = Vec::from(topic.as_bytes());
+    topic_vec.append(&mut nonce_vec);
+    IVec::from(topic_vec)
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +88,7 @@ pub struct WsSession{
     pub offset: u64,
     pub range_idx: sled::Tree,
     pub day_idx: sled::Tree,
+    pub main_idx: sled::Tree,
     pub id_generator: IdGenerator
 }
 
@@ -89,18 +96,11 @@ impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.text("{\"rs\":true,\"detail\":\"connected\"}");
-        let range = Vec::from(self.offset.to_be_bytes());
-        for key in self.range_idx.range(range..){
-            if let Ok((_k, v)) = key{
-                if let Ok(txt_key) = String::from_utf8(v.to_vec()){
-                    let seq:Vec<&str> = txt_key.split('-').collect();
-                    let topic = seq[0].to_string();
-                    if topic.cmp(&self.topic).is_ne() {
-                        continue;
-                    }
-
-                }
-                if let Ok(Some(val)) = self.db.get(v){
+        let flag_min = make_key(self.topic.as_str(), self.offset);
+        let flag_max = make_key(self.topic.as_str(), u64::MAX);
+        for key in self.main_idx.range(flag_min..flag_max){
+            if let Ok((_k, main_key)) = key{
+                if let Ok(Some(val)) = self.db.get(main_key){
                     if let Ok(json_text) = String::from_utf8(val.to_vec()){
                         println!("retain message:{}", json_text);
                         ctx.text(json_text);
@@ -177,36 +177,30 @@ impl WsSession {
         let key = format!("{}-{}", message.t, message.i);
         let val = serde_json::to_string(message).unwrap();
         let idx_key = Vec::from(nonce.to_be_bytes());
-        let today_timestamp_vec = i64toVec(today_ts());
-        let remove_flag_key = today_timestamp_vec.clone();
-        let deleted = match self.day_idx.remove(today_timestamp_vec){
-            Ok(Some(_k))=>true,
-            Ok(None)=>true,
-            Err(_)=>false
+        let today_timestamp_vec = i64to_vec(today_ts());
+        // update today's last nonce index
+        let new_idx_key = idx_key.clone();
+        if let Ok(_k) = self.day_idx.insert(today_timestamp_vec, idx_key){
+            println!("update today's last nonce success!");
+            if let Ok(_) = self.range_idx.insert(new_idx_key, key.as_bytes()){
+                println!("update range index success!");
+                let main_key = make_key(self.topic.as_str(), nonce);
+                if let Ok(_) = self.main_idx.insert(main_key, key.as_bytes()) {
+                    println!("update main index success!");
+                    if let Ok(_) = self.db.insert(key, val.into_bytes()){
+                        println!("insert data success!");
+                    }else{
+                        eprintln!("insert data faild!");
+                    }
+                }else{
+                    eprintln!("update main index faild!");
+                }
+            }else{
+                eprintln!("update range index faild!");
+            }
+        }else{
+            eprintln!("update today's last nonce faild!");
         };
-        let remove_flag_val = idx_key.clone();
-        if deleted {
-            if let Ok(_k) = self.day_idx.insert(remove_flag_key, remove_flag_val){
-                println!("update today's last nonce success!")
-            }
-        }
-        
-        match self.range_idx.insert(idx_key, key.as_bytes()) {
-            Ok(_)=>{
-                match self.db.insert(key, val.into_bytes()){
-                    Ok(_rd)=>{
-                        println!("Insert data Success");
-                    }
-                    Err(e)=>{
-                        println!("Inset faild:{}", e);
-                    }
-                };
-            },
-            Err(err)=>{
-                println!("insert index faild:{err:?}")
-            }
-        } 
-        
     }
     
 }

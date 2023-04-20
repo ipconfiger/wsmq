@@ -13,7 +13,8 @@ lazy_static! {
 struct AppState {
     db: sled::Db,
     range_idx: sled::Tree,
-    day_idx: sled::Tree
+    day_idx: sled::Tree,
+    main_idx: sled::Tree
 }
 
 async fn index(req: HttpRequest, stream: web::Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
@@ -28,6 +29,7 @@ async fn index(req: HttpRequest, stream: web::Payload, data: web::Data<AppState>
         offset: offset.parse::<u64>().unwrap(),
         range_idx: data.range_idx.clone(),
         day_idx: data.day_idx.clone(),
+        main_idx: data.main_idx.clone(),
         id_generator: ID_GENERATOR.clone()
     }, &req, stream);
     println!("{:?}", resp);
@@ -70,13 +72,21 @@ async fn trim_handler(req: HttpRequest, data: web::Data<AppState>) -> impl Respo
     let off_i32: i32 = offset.parse::<i32>().unwrap();
     let target_timestamp = websocks::today_ts() - (3600 * 24 * (off_i32 + 1)) as i64;
     println!("tar ts: {target_timestamp:?}");
-    if let Ok(Some(v)) = data.day_idx.get(websocks::i64toVec(target_timestamp)){
+    if let Ok(Some(v)) = data.day_idx.get(websocks::i64to_vec(target_timestamp)){
         println!("Got nonce:{v:?}");
         for item in data.range_idx.range(..v){
             if let Ok((rkey, data_key)) = item {
+                let data_key_for_split = data_key.clone();
                 println!("Matched key:「{data_key:?}」");
                 if let Ok(_) = data.db.remove(data_key){
                     println!("removed from storage");
+                }
+                let str_key = String::from_utf8(data_key_for_split.to_vec().try_into().unwrap()).unwrap();
+                let topic = str_key.split('-').next().unwrap();
+                let nonce = websocks::vectu64(rkey.to_vec());
+                let main_key = websocks::make_key(topic, nonce);
+                if let Ok(_) = data.main_idx.remove(main_key){
+                    println!("removed from index");
                 }
                 if let Ok(_) = data.range_idx.remove(rkey){
                     println!("removed from index");
@@ -101,12 +111,14 @@ async fn main() -> std::io::Result<()> {
     let db = sled::open("db.sled").unwrap();
     let r_idx = db.open_tree("range").unwrap();
     let d_idx = db.open_tree("d_idx").unwrap();
+    let m_idx = db.open_tree("main_idx").unwrap();
+
     if let Ok(Some((k, _v))) = r_idx.last(){
         let last_id = u64::from_be_bytes(k.to_vec().try_into().unwrap());
         println!("last id:{}", last_id);
         ID_GENERATOR.init_with(last_id);
     }
-    let app_state = web::Data::new(AppState { db, range_idx: r_idx, day_idx: d_idx });
+    let app_state = web::Data::new(AppState { db, range_idx: r_idx, day_idx: d_idx, main_idx: m_idx});
     HttpServer::new(move || App::new()
                             .route("/ws/{topic}/client/{cid}/offset/{offset}", web::get().to(index))
                             .route("/api/status", web::get().to(status_handler))
